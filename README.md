@@ -1,105 +1,84 @@
 # Bayesian Multi-Armed Bandit Trading System
 
-An intelligent trading system that uses **Thompson Sampling** to dynamically select between competing trading strategies while minimizing Bayesian regret.
+An intelligent trading system that uses Thompson Sampling to dynamically select between competing trading strategies while minimizing Bayesian regret.
 
 ![Dashboard](bayesian_trading_dashboard.png)
 
-## 🎯 What It Does
+## Overview
 
-This system treats strategy selection as a **multi-armed bandit problem**:
-- **Arms**: Momentum, Mean Reversion, Trend Following strategies
-- **Reward**: Trading performance in [0, 1] range
-- **Goal**: Maximize cumulative reward while minimizing regret
+This project implements a decision-making engine based on the Multi-Armed Bandit (MAB) framework to optimize trading strategy selection. Unlike traditional backtesting which selects a static "best" strategy, this system learns online, adapting to changing market regimes (Bull, Bear, Ranging) in real-time.
 
-Thompson Sampling uses **Beta-distributed priors** that update with each observation, naturally balancing exploration vs. exploitation.
+The core algorithm, Thompson Sampling, treats the expected performance of each strategy as a random variable governed by a probability distribution. By constantly updating these beliefs with new market data, the system naturally balances:
+*   **Exploration**: Trying strategies about which we have high uncertainty.
+*   **Exploitation**: Selecting strategies that have performed well historically.
 
-## 📊 Results on SPY (5 Years)
+## Mathematical Foundation
 
-| Metric | Value |
-|--------|-------|
-| Regret Ratio | 23.44% of theoretical bound |
-| Efficiency | 86.4% vs Oracle (perfect hindsight) |
-| Sublinear Growth | ✓ Confirmed |
-| Rounds | 1,155 trading days |
+The system models the trading problem as a stochastic bandit problem with $K$ arms (strategies) and imperfect information.
 
-## 🖼️ Visualizations
+### 1. The Algorithm: Thompson Sampling
+Thompson Sampling is a randomized probability matching algorithm. For each trading strategy $k \in \{1, ..., K\}$, we model the probability of receiving a positive reward (or the mean reward) as a parameter $\theta_k$.
 
-### 1. Regret vs Theoretical Bound
-![Regret](01_regret_analysis.png)
-Cumulative regret stays well below O(√(K·T·log(T))) bound.
+We calculate the posterior distribution $P(\theta_k | \mathcal{D})$ based on observed data $\mathcal{D}$. At each time step $t$:
+1.  Sample expected rewards $\hat{\theta}_k \sim P(\theta_k | \mathcal{D})$ for all strategies.
+2.  Select the strategy with the highest sample: $a_t = \arg\max_k \hat{\theta}_k$.
+3.  Observe the actual reward $r_t$.
+4.  Update the posterior distribution with the new observation.
 
-### 2. Posterior Evolution
-![Posteriors](04_posterior_evolution.png)
-Beta distributions sharpen as evidence accumulates.
+### 2. Beta-Bernoulli Conjugate Priors
+Since our rewards are bounded in $[0, 1]$, we use the **Beta distribution** as the conjugate prior for the Bernoulli likelihood. This allows for efficient, closed-form Bayesian updates without expensive numerical integration.
 
-### 3. Selection Heatmap
-![Heatmap](03_selection_heatmap.png)
-Exploration → exploitation transition over time.
+*   **Prior**: $\theta_k \sim \text{Beta}(\alpha_k, \beta_k)$
+*   **Likelihood**: $P(r | \theta_k) = \theta_k^r (1-\theta_k)^{1-r}$
+*   **Posterior**: After observing reward $r_t$, the new parameters are:
+    $$ \alpha_{new} = \alpha_{old} + r_t $$
+    $$ \beta_{new} = \beta_{old} + (1 - r_t) $$
 
-## 🚀 Quick Start
+We initialize all strategies with a uniform prior $\text{Beta}(1, 1)$, implying no initial knowledge of performance.
 
+### 3. Regret Analysis
+The metric for success is **Bayesian Regret** ($R_T$), defined as the difference between the reward of the optimal strategy (Oracle) and the selected strategy over $T$ rounds:
+
+$$ R_T = \sum_{t=1}^{T} \left( \mathbb{E}[r_t | a^*] - \mathbb{E}[r_t | a_t] \right) $$
+
+where $a^*$ is the optimal arm.
+
+Theoretical bounds for Thompson Sampling prove that expected regret grows logarithmically with time, or $O(\sqrt{KT \log T})$ in distribution-independent settings. This implies that the average regret per round tends to zero: $\lim_{T \to \infty} \frac{R_T}{T} = 0$, meaning the system converges to the optimal strategy.
+
+## Empirical Results
+
+Tested on 5 years of SPY (S&P 500 ETF) historical data (1,155 trading days).
+
+### Performance Metrics
+*   **Regret Ratio**: 23.44%
+    *   Our system achieved a cumulative regret that was only 23.44% of the theoretical upper bound. This demonstrates efficient learning; the system identified optimal strategies faster than the worst-case theoretical prediction.
+*   **Efficiency**: 86.4%
+    *   The system captured 86.4% of the total cumulative return that a perfect Oracle (with hindsight) would have achieved.
+*   **Convergence**:
+    *   As seen in the posterior evolution charts, the probability distributions for strategy rewards started as flat lines (high uncertainty) and converged to sharp peaks (high confidence) as data accumulated.
+
+## Usage
+
+### Dependencies
+Install the required Python packages:
 ```bash
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Run simulation
+### Running the Simulation
+Execute the main script to run the simulation on historical data:
+```bash
 python main.py
 ```
 
-## 📁 Project Structure
+## Project Structure
 
-```
-├── main.py              # Main simulation orchestrator
-├── thompson_sampling.py # Thompson Sampling engine (Beta priors)
-├── strategies.py        # Trading strategies + Oracle baseline
-├── market_data.py       # SPY data fetcher + regime detection
-├── regret.py            # Regret calculation with bounds
-├── visualizations.py    # 5 matplotlib visualizations
-└── requirements.txt     # Python dependencies
-```
+*   **main.py**: Orchestrator that runs the simulation loop.
+*   **thompson_sampling.py**: Implementation of the Bayesian update engine using SciPy's Beta distribution.
+*   **strategies.py**: Definition of Momentum, Mean Reversion, and Trend Following strategies.
+*   **regret.py**: Engine for calculating instantaneous and cumulative regret against theoretical bounds.
+*   **visualizations.py**: Matplotlib plotting code for generating the dashboard and analytics.
 
-## 🧠 How It Works
-
-### Thompson Sampling Algorithm
-1. Initialize Beta(α=1, β=1) prior for each strategy (uniform)
-2. Sample from each posterior: `θ ~ Beta(α, β)`
-3. Select strategy with highest sample
-4. Execute trade, observe reward `r ∈ [0, 1]`
-5. Update: `α += r`, `β += (1 - r)`
-6. Repeat
-
-### Trading Strategies
-- **Momentum**: Buy winners, sell losers (best in Bull/Bear)
-- **Mean Reversion**: Buy oversold, sell overbought (best in Ranging)
-- **Trend Following**: Follow moving average crossovers
-
-### Market Regimes
-Detected from price data using:
-- 20-day momentum
-- 20-day volatility
-- SMA crossovers
-
-Classifications: BULL, BEAR, RANGING, VOLATILE
-
-## 📈 Theoretical Background
-
-Thompson Sampling achieves **O(√(K·T·log(T)))** regret where:
-- K = number of arms (strategies)
-- T = number of rounds
-
-This is **near-optimal** for stochastic bandits.
-
-## 🛠️ Configuration
-
-Edit `main.py` to customize:
-```python
-sim = BayesianTradingSimulation(
-    years=5,        # Years of SPY data
-    start_idx=50    # Skip first N days for indicator warmup
-)
-sim.visualize(show=True)  # Set True for interactive display
-```
-
-## 📝 License
+## License
 
 MIT License
